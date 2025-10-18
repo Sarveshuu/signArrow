@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Adventure Game - Raiku Style</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: linear-gradient(135deg, #002a11 0%, #000000 100%);
+    height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    user-select: none;
+  }
+  #gameArea {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(to bottom, #e55e0a, #001800);
+    overflow: hidden;
+  }
+  #character {
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    background-repeat: no-repeat;
+    background-size: contain;
+    top: 50vh;
+    left: 50vw;
+    transition: top 0.1s, left 0.1s;
+    z-index: 10;
+  }
+  #scoreBoard {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    color: #a1d89b;
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 4px black;
+    z-index: 15;
+  }
+  #message {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #cee9c6;
+    font-size: 1.4rem;
+    font-weight: 600;
+    text-shadow: 1px 1px 5px black;
+    background: rgba(77, 35, 0, 0.8);
+    padding: 12px 24px;
+    border-radius: 12px;
+    max-width: 80vw;
+    text-align: center;
+    z-index: 20;
+  }
+  .obstacle {
+    position: absolute;
+    background-color: #b32a2a; /* Red traps */
+    border-radius: 12px;
+    box-shadow: 0 0 8px #850000;
+  }
+  .collectible {
+    position: absolute;
+    background-color: #e46d19; /* Green collectibles */
+    border-radius: 50%;
+    box-shadow: 0 0 10px #e06f12;
+  }
+  #gameOverOverlay {
+    position: fixed;
+    top:0; left:0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #a1d89b;
+    font-size: 2.5rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 8px black;
+    z-index: 100;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+  #gameOverOverlay.visible {
+    visibility: visible;
+    opacity: 1;
+  }
+  #gameOverOverlay button {
+    margin-top: 25px;
+    background-color: #e36619;
+    border: none;
+    padding: 14px 32px;
+    font-size: 1.3rem;
+    border-radius: 12px;
+    cursor: pointer;
+    color: white;
+    font-weight: 600;
+    user-select: none;
+    box-shadow: 0 0 8px #f16431;
+    transition: background-color 0.3s ease;
+  }
+  #gameOverOverlay button:hover {
+    background-color: #ed5717;
+  }
+  @media (max-width: 600px) {
+    #scoreBoard {
+      font-size: 1.2rem;
+    }
+    #message {
+      font-size: 1rem;
+      padding: 8px 14px;
+    }
+    #gameOverOverlay {
+      font-size: 1.8rem;
+    }
+    #gameOverOverlay button {
+      font-size: 1rem;
+      padding: 10px 24px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="gameArea">
+  <div id="scoreBoard">Score: 0</div>
+  <div id="character"></div>
+  <div id="message">Use arrow keys or WASD to move. Collect green gems and avoid red traps!</div>
+</div>
+
+<div id="gameOverOverlay">
+  <div>Game Over</div>
+  <button id="restartBtn">Restart Game</button>
+</div>
+
+<script>
+  const gameArea = document.getElementById('gameArea');
+  const character = document.getElementById('character');
+  const scoreBoard = document.getElementById('scoreBoard');
+  const message = document.getElementById('message');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const restartBtn = document.getElementById('restartBtn');
+
+  // You must set this exactly to your unique character image's URL or base64 string:
+  let characterImageSrc = 'sign1-removebg-preview.png'; // e.g. 'https://example.com/your-character.png'
+
+  // Player position and movement variables
+  let posX = window.innerWidth / 2 - 32;
+  let posY = window.innerHeight / 2 - 32;
+  const speed = 8;
+  const charSize = 64;
+
+  // Score and game state
+  let score = 0;
+  let isGameOver = false;
+
+  // Obstacles and collectibles collections
+  let obstacles = [];
+  let collectibles = [];
+
+  // Game config for challenge
+  const numObstacles = 20;
+  const numCollectibles = 6;
+  const obstacleSize = 50;
+  const collectibleSize = 30;
+
+  // Utility: Random position avoiding start zone
+  function randomPosition(size) {
+    const padding = 20;
+    let x, y, valid;
+    do {
+      x = Math.floor(Math.random() * (window.innerWidth - size - padding * 2)) + padding;
+      y = Math.floor(Math.random() * (window.innerHeight - size - padding * 2)) + padding;
+      valid = !(x > posX - 100 && x < posX + 100 && y > posY - 100 && y < posY + 100);
+    } while (!valid);
+    return {x, y};
+  }
+
+  // Create obstacles (red traps)
+  function createObstacles() {
+    for(let i = 0; i < numObstacles; i++) {
+      const obs = document.createElement('div');
+      obs.classList.add('obstacle');
+      obs.style.width = obstacleSize + 'px';
+      obs.style.height = obstacleSize + 'px';
+      const pos = randomPosition(obstacleSize);
+      obs.style.left = pos.x + 'px';
+      obs.style.top = pos.y + 'px';
+      gameArea.appendChild(obs);
+      obstacles.push({el: obs, x: pos.x, y: pos.y, size: obstacleSize});
+    }
+  }
+
+  // Create collectibles (green gems)
+  function createCollectibles() {
+    for(let i = 0; i < numCollectibles; i++) {
+      const col = document.createElement('div');
+      col.classList.add('collectible');
+      col.style.width = collectibleSize + 'px';
+      col.style.height = collectibleSize + 'px';
+      const pos = randomPosition(collectibleSize);
+      col.style.left = pos.x + 'px';
+      col.style.top = pos.y + 'px';
+      gameArea.appendChild(col);
+      collectibles.push({el: col, x: pos.x, y: pos.y, size: collectibleSize, collected: false});
+    }
+  }
+
+  // Collision detection
+  function isColliding(x1, y1, w1, h1, x2, y2, w2, h2) {
+    return !(x2 > x1 + w1 ||
+             x2 + w2 < x1 ||
+             y2 > y1 + h1 ||
+             y2 + h2 < y1);
+  }
+
+  // Move the character on keyboard input and handle collision logic
+  function moveCharacter(dx, dy) {
+    if(isGameOver) return;
+
+    let newX = posX + dx;
+    let newY = posY + dy;
+    newX = Math.min(Math.max(0, newX), window.innerWidth - charSize);
+    newY = Math.min(Math.max(0, newY), window.innerHeight - charSize);
+
+    for (const obs of obstacles) {
+      if (isColliding(newX, newY, charSize, charSize, obs.x, obs.y, obs.size, obs.size)) {
+        triggerGameOver();
+        return;
+      }
+    }
+
+    posX = newX;
+    posY = newY;
+    character.style.left = posX + 'px';
+    character.style.top = posY + 'px';
+
+    collectibles.forEach(item => {
+      if (!item.collected && isColliding(posX, posY, charSize, charSize, item.x, item.y, item.size, item.size)) {
+        item.collected = true;
+        gameArea.removeChild(item.el);
+        score += 10;
+        updateScore();
+        showMessage('Collected a green gem! +10 score.');
+        checkWin();
+      }
+    });
+  }
+
+  let messageTimeout;
+  function showMessage(text) {
+    message.textContent = text;
+    clearTimeout(messageTimeout);
+    messageTimeout = setTimeout(() => {
+      message.textContent = 'Use arrow keys or WASD to move. Collect green gems and avoid red traps!';
+    }, 3000);
+  }
+
+  function updateScore() {
+    scoreBoard.textContent = `Score: ${score}`;
+  }
+
+  function checkWin() {
+    if(collectibles.every(item => item.collected)) {
+      showMessage('You collected all gems! You win! Restarting...');
+      setTimeout(() => {
+        restartGame();
+      }, 4000);
+    }
+  }
+
+  function triggerGameOver() {
+    isGameOver = true;
+    showMessage('You hit a trap! Game Over!');
+    gameOverOverlay.classList.add('visible');
+  }
+
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+  function gameLoop() {
+    if(!isGameOver){
+      if(keys['arrowup'] || keys['w']) moveCharacter(0, -speed);
+      if(keys['arrowdown'] || keys['s']) moveCharacter(0, speed);
+      if(keys['arrowleft'] || keys['a']) moveCharacter(-speed, 0);
+      if(keys['arrowright'] || keys['d']) moveCharacter(speed, 0);
+    }
+    requestAnimationFrame(gameLoop);
+  }
+
+  function restartGame() {
+    isGameOver = false;
+    score = 0;
+    updateScore();
+    showMessage('Use arrow keys or WASD to move. Collect green gems and avoid red traps!');
+    gameOverOverlay.classList.remove('visible');
+
+    posX = window.innerWidth/2 - charSize/2;
+    posY = window.innerHeight/2 - charSize/2;
+    character.style.left = posX + 'px';
+    character.style.top = posY + 'px';
+
+    obstacles.forEach(o => gameArea.removeChild(o.el));
+    collectibles.forEach(c => gameArea.removeChild(c.el));
+    obstacles = [];
+    collectibles = [];
+
+    createObstacles();
+    createCollectibles();
+  }
+
+  function verifyCharacterImage() {
+    if (!character.style.backgroundImage || !character.style.backgroundImage.includes(characterImageSrc)) {
+      alert('Invalid character image! Please use the exact assigned image for the game character.');
+      message.textContent = 'Game disabled due to invalid character image.';
+      return false;
+    }
+    return true;
+  }
+
+  window.onload = function() {
+    if(!verifyCharacterImage()) return;
+    restartGame();
+    gameLoop();
+  };
+
+  restartBtn.addEventListener('click', function() {
+    restartGame();
+  });
+
+  // --- SET YOUR CHARACTER IMAGE HERE ---
+  // Example usage — replace with your image URL or base64:
+  characterImageSrc = 'sign1-removebg-preview.png';
+  character.style.backgroundImage = `url('${characterImageSrc}')`;
+
+</script>
+
+</body>
+</html>
